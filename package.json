@@ -1,0 +1,10 @@
+{
+  "name": "thorio-tcpclient",
+  "version": "1.0.0",
+  "description": "ThorIO.TcpClient",
+  "main": "index.js",
+  "author": {
+    "name": "Magnus Thor",
+    "email": "magnus.thor74@gmail.com"
+  }
+}
