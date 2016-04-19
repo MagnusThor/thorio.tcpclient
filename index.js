@@ -15,48 +15,58 @@ ThorIOClient.TcpClient = (function (net) {
         message.prototype.toString = function () {
             return JSON.stringify(this.JSON);
         };
+        message.prototype.toBytes = function () {
+            var data = this.toString();
+            var buf = new Buffer(data.length + 2);
+            buf[0] = 0x00;
+            buf.write(data, 1);
+            buf[data.length + 1] = 0xff;
+            return buf;
+        };
         return message;
     })();
-    var ctor = function (host, port,controller) {
-        var self = this;
-        
+
+    var client = function (host, port, controller) {
+        var self = this; 
+        var getListener = function (topic) {
+            var listener = self.listeners.find(function (pre) {
+                return pre.topic === topic;
+            });
+            return listener;
+        };
+        var dispatch = function (topic, data) {
+            var listener = getListener(topic);
+            if (!listener) return;
+            listener.fn.apply(self, [data, topic]);
+        };
+        var send = function (data) {
+            var bytes = data.toBytes();
+            self.socket.write(bytes);
+        };
+       
         this.controller = controller;
         this.listeners = [];
-
         this.socket = new net.Socket();
         this.socket.on('error', function (err) {
             self.onclose.apply(self, [err]);        
         });
-        
         this.socket.on("end", function (event) {
             self.onclose.apply(self, [event]);
         });
-
-        var dispatch = function (topic, data) {
-            var listener = self.listeners.find(function (pre) {
-                return pre.topic === topic;
-            });
-            if (!listener) return;
-            listener.fn.apply(self, [data, topic]);
-        };
-        
-        function send(data) {
-            self.socket.write(data.toString());
-        };
-
-        var ondata = function (data) {
-            var message = JSON.parse(data.toString());
+        this.socket.on("data", function (bytes) {
+            var raw = bytes.slice(bytes.indexOf(0x00) + 1, bytes.indexOf(0xff));
+            var message = JSON.parse(raw.toString());
             if (message.T === "$open_") {
                 self.onopen.apply(self, [message.D]);
             } else {
                 dispatch(message.T, message.D);
             }
-        };
-        this.connect = function () {
-            self.socket.connect(port, host, function () {
-                self.socket.on('data', ondata);
-                send(new Message("$open_",{},self.controller));
-            });
+        });
+        this.connect = function (timeout) {
+            var t = setTimeout(function (){
+                send(new Message("$open_", {}, self.controller));
+                clearTimeout(t); 
+            }, timeout || 1000)
         };
         this.close = function () {
             self.socket.destroy();
@@ -87,8 +97,10 @@ ThorIOClient.TcpClient = (function (net) {
             var message = new Message(topic, data, this.controller);
             send(message);
         }
+        self.socket.connect(port, host, function () {
+        });
     };
-    return ctor;
+    return client;
 })(require('net'));
 
 module.exports = ThorIOClient;
